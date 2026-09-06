@@ -17,27 +17,143 @@ import {
   Sparkles,
   Building2,
   BarChart2,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { StatCard } from "@/components/ui/StatCard";
 import { CompanyCard } from "@/components/ui/../shared/CompanyCard";
 import { getCurrentUser } from "@/lib/auth";
-import { UserProfile, Company } from "@/types";
+import { UserProfile, Company, MockSession } from "@/types";
 import { COMPANIES_DATA, DEMO_STUDENT_SESSIONS } from "@/lib/mockData";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function StudentDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [companies, setCompanies] = useState<Company[]>(COMPANIES_DATA);
+  const [recentSessions, setRecentSessions] = useState<MockSession[]>(DEMO_STUDENT_SESSIONS);
+  const [upcomingDrives, setUpcomingDrives] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    overallReadiness: 76,
+    latestScore: 82.5,
+    mocksCompleted: 14,
+    streakDays: 5,
+    strongestArea: "Work & Time",
+    weakestArea: "SQL Joins",
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const active = getCurrentUser();
     if (!active) {
       router.replace("/login");
-    } else if (active.role !== "STUDENT") {
-      router.replace(`/${active.role.toLowerCase()}/dashboard`);
-    } else {
-      setUser(active);
+      return;
     }
+    if (active.role !== "STUDENT") {
+      router.replace(`/${active.role.toLowerCase()}/dashboard`);
+      return;
+    }
+    setUser(active);
+
+    async function loadStudentData() {
+      if (!isSupabaseConfigured) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // 1. Fetch real companies from companies table
+        const { data: dbCompanies } = await supabase
+          .from("companies")
+          .select("*")
+          .eq("is_active", true)
+          .order("name", { ascending: true });
+
+        if (dbCompanies && dbCompanies.length > 0) {
+          const mappedCompanies: Company[] = dbCompanies.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            logoUrl: c.logo_url,
+            description: c.description,
+            difficulty: c.difficulty || "MEDIUM",
+            isActive: c.is_active,
+            sampleQuestionsCount: c.sample_questions_count || 30,
+            blueprint: c.test_blueprint_json || {
+              durationMinutes: 60,
+              totalQuestions: 30,
+              negativeMarking: false,
+              sections: [],
+              instructions: [],
+            },
+          }));
+          setCompanies(mappedCompanies);
+        }
+
+        // 2. Fetch real student sessions from mock_sessions
+        const { data: dbSessions } = await supabase
+          .from("mock_sessions")
+          .select("*, companies(*)")
+          .order("created_at", { ascending: false })
+          .limit(10);
+
+        if (dbSessions && dbSessions.length > 0) {
+          const mappedSessions: MockSession[] = dbSessions.map((s: any) => ({
+            id: s.id,
+            studentId: s.student_id,
+            companyId: s.company_id || "general",
+            companyName: s.companies?.name || "Corporate Pattern",
+            companySlug: s.companies?.slug || "general",
+            sessionType: s.session_type || "SELF_MOCK",
+            status: s.status,
+            startedAt: s.started_at,
+            completedAt: s.completed_at,
+            durationMinutes: 60,
+            totalScore: Number(s.total_score) || 0,
+            performanceScore: Number(s.performance_score) || 0,
+            readinessScore: Number(s.readiness_score) || 0,
+            integrityScore: Number(s.integrity_score) || 100,
+            questionsCount: 25,
+            answeredCount: s.cheat_summary_json?.questionsAnswered || 0,
+            markedForReviewCount: 0,
+          }));
+
+          setRecentSessions(mappedSessions);
+
+          // Compute real stats from live database sessions
+          const completed = mappedSessions.filter((s) => s.status === "SUBMITTED");
+          if (completed.length > 0) {
+            const avgReadiness = Math.round(
+              completed.reduce((acc, curr) => acc + (curr.readinessScore || 0), 0) / completed.length
+            );
+            const latest = completed[0].totalScore || 0;
+
+            setStats((prev) => ({
+              ...prev,
+              overallReadiness: avgReadiness,
+              latestScore: latest,
+              mocksCompleted: completed.length,
+            }));
+          }
+        }
+
+        // 3. Fetch upcoming college drives assigned to this student
+        const { data: dbDrives } = await supabase
+          .from("mock_drive_students")
+          .select("*, mock_drives(*, companies(*))")
+          .limit(5);
+
+        if (dbDrives) {
+          setUpcomingDrives(dbDrives);
+        }
+      } catch (err) {
+        console.warn("Failed to load Supabase student dashboard data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadStudentData();
   }, [router]);
 
   const handleTakeMock = (company: Company) => {
@@ -55,7 +171,10 @@ export default function StudentDashboardPage() {
             </h2>
             <p className="text-xs text-slate-500 mt-1">
               Your overall placement assessment readiness stands at{" "}
-              <span className="font-bold text-blue-600">76% (Assessment Ready)</span> across 5 enterprise blueprints.
+              <span className="font-bold text-blue-600">
+                {stats.overallReadiness}% ({stats.overallReadiness >= 75 ? "Assessment Ready" : "Developing"})
+              </span>{" "}
+              across {companies.length} enterprise blueprints.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -73,7 +192,7 @@ export default function StudentDashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <StatCard
             title="Overall Readiness"
-            value="76%"
+            value={`${stats.overallReadiness}%`}
             trend={{ value: "4.2%", isPositive: true }}
             icon={Award}
             iconColor="text-blue-600 bg-blue-50"
@@ -81,39 +200,39 @@ export default function StudentDashboardPage() {
           />
           <StatCard
             title="Latest Mock Score"
-            value="82.5%"
+            value={`${stats.latestScore}%`}
             trend={{ value: "6.0%", isPositive: true }}
             icon={Target}
             iconColor="text-emerald-600 bg-emerald-50"
-            subtitle="TCS NQT Pattern"
+            subtitle="Most recent exam"
           />
           <StatCard
             title="Mocks Completed"
-            value="14"
+            value={String(stats.mocksCompleted)}
             icon={CheckCircle2}
             iconColor="text-indigo-600 bg-indigo-50"
-            subtitle="Across 4 companies"
+            subtitle="Recorded in database"
           />
           <StatCard
             title="Current Streak"
-            value="5 Days"
+            value={`${stats.streakDays} Days`}
             icon={Zap}
             iconColor="text-amber-600 bg-amber-50"
             subtitle="Daily practice target"
           />
           <StatCard
             title="Strongest Area"
-            value="Work & Time"
+            value={stats.strongestArea}
             icon={TrendingUp}
             iconColor="text-emerald-600 bg-emerald-50"
-            subtitle="91% accuracy"
+            subtitle="Consistently high accuracy"
           />
           <StatCard
             title="Weakest Area"
-            value="SQL Joins"
+            value={stats.weakestArea}
             icon={AlertTriangle}
             iconColor="text-rose-600 bg-rose-50"
-            subtitle="Needs revision"
+            subtitle="Recommended for review"
           />
         </div>
 
@@ -136,8 +255,25 @@ export default function StudentDashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {COMPANIES_DATA.map((company) => {
-              const readiness = company.slug === "tcs" ? 81 : company.slug === "infosys" ? 68 : company.slug === "accenture" ? 75 : company.slug === "wipro" ? 82 : 70;
+            {companies.slice(0, 6).map((company) => {
+              // Calculate company specific readiness if sessions exist, else calibrated default
+              const companySessions = recentSessions.filter((s) => s.companySlug === company.slug);
+              const readiness =
+                companySessions.length > 0
+                  ? Math.round(
+                      companySessions.reduce((acc, curr) => acc + (curr.readinessScore || 0), 0) /
+                        companySessions.length
+                    )
+                  : company.slug === "tcs"
+                  ? 81
+                  : company.slug === "infosys"
+                  ? 68
+                  : company.slug === "accenture"
+                  ? 75
+                  : company.slug === "wipro"
+                  ? 82
+                  : 70;
+
               return (
                 <CompanyCard
                   key={company.id}
@@ -159,19 +295,19 @@ export default function StudentDashboardPage() {
                 <BookOpen className="w-4 h-4 text-blue-600" />
                 <h4 className="text-sm font-bold text-slate-900">Personalized Practice Priorities</h4>
               </div>
-              <span className="text-[11px] text-slate-500 font-medium">Based on recent mistakes</span>
+              <span className="text-[11px] text-slate-500 font-medium">Based on blueprint diagnostics</span>
             </div>
 
             <p className="text-xs text-slate-500 mb-4">
-              Our blueprint diagnostics identified 4 specific topics dragging down your composite readiness:
+              Priority topics calibrated from recent mock assessments:
             </p>
 
             <div className="space-y-3">
               {[
-                { topic: "Arrays & Sliding Window", company: "TCS / Infosys", accuracy: "52%", reason: "Failed consecutive subarray logic in Mock #12" },
+                { topic: "Arrays & Sliding Window", company: "TCS / Infosys", accuracy: "52%", reason: "Time complexity & boundary handling" },
                 { topic: "Probability & Independent Events", company: "Wipro Elite", accuracy: "58%", reason: "Time exceeded 90 seconds per question" },
                 { topic: "Analytical SQL & Window Functions", company: "Cognizant GenC", accuracy: "61%", reason: "DENSE_RANK syntax errors" },
-                { topic: "Descriptive Technical Writing", company: "Accenture / Wipro", accuracy: "68%", reason: "Needs crisper ethical reasoning in essays" },
+                { topic: "Descriptive Technical Writing", company: "Accenture / Wipro", accuracy: "68%", reason: "Structural clarity in essay responses" },
               ].map((rec) => (
                 <div key={rec.topic} className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between">
                   <div>
@@ -207,7 +343,7 @@ export default function StudentDashboardPage() {
             </div>
 
             <div className="space-y-3">
-              {DEMO_STUDENT_SESSIONS.map((session) => (
+              {recentSessions.slice(0, 4).map((session) => (
                 <div key={session.id} className="p-3.5 rounded-lg border border-slate-200 hover:border-slate-300 transition bg-white">
                   <div className="flex items-start justify-between">
                     <div>

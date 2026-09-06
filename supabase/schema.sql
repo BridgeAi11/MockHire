@@ -210,9 +210,12 @@ ALTER TABLE ai_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cheat_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 
--- 1. COMPANIES (Publicly readable by all authenticated & anonymous users)
+-- 1. COMPANIES (Publicly readable by all authenticated & anonymous users; admins can manage)
 CREATE POLICY "Companies are viewable by everyone" ON companies
     FOR SELECT USING (true);
+
+CREATE POLICY "Admins have full access to companies" ON companies
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
 
 -- 2. QUESTIONS (Only published questions visible to students; correct answers hidden via API layer)
 CREATE POLICY "Published questions viewable by authenticated users" ON questions

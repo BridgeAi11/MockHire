@@ -1,17 +1,67 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, Filter, Building2, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { CompanyCard } from "@/components/shared/CompanyCard";
 import { COMPANIES_DATA } from "@/lib/mockData";
+import { Company } from "@/types";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function StudentCompaniesPage() {
+  const [companies, setCompanies] = useState<Company[]>(COMPANIES_DATA);
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState("ALL");
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filtered = COMPANIES_DATA.filter((comp) => {
-    const matchesSearch = comp.name.toLowerCase().includes(search.toLowerCase()) || comp.description.toLowerCase().includes(search.toLowerCase());
+  useEffect(() => {
+    async function fetchCompanies() {
+      if (!isSupabaseConfigured) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("companies")
+          .select("*")
+          .eq("is_active", true)
+          .order("name", { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const mapped: Company[] = data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            logoUrl: c.logo_url,
+            description: c.description,
+            difficulty: c.difficulty || "MEDIUM",
+            isActive: c.is_active,
+            sampleQuestionsCount: c.sample_questions_count || 30,
+            blueprint: c.test_blueprint_json || {
+              durationMinutes: 60,
+              totalQuestions: 30,
+              negativeMarking: false,
+              sections: [],
+              instructions: [],
+            },
+          }));
+          setCompanies(mapped);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch companies from Supabase, using fallback:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchCompanies();
+  }, []);
+
+  const filtered = companies.filter((comp) => {
+    const matchesSearch =
+      comp.name.toLowerCase().includes(search.toLowerCase()) ||
+      comp.description.toLowerCase().includes(search.toLowerCase());
     const matchesDifficulty = difficultyFilter === "ALL" || comp.difficulty === difficultyFilter;
     return matchesSearch && matchesDifficulty;
   });

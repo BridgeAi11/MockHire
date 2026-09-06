@@ -1,12 +1,61 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Zap, Clock, ShieldCheck, ArrowRight, HelpCircle } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { COMPANIES_DATA } from "@/lib/mockData";
+import { Company } from "@/types";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function StudentMockHubPage() {
+  const [companies, setCompanies] = useState<Company[]>(COMPANIES_DATA);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadCompanies() {
+      if (!isSupabaseConfigured) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("companies")
+          .select("*")
+          .eq("is_active", true)
+          .order("name", { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const mapped: Company[] = data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            logoUrl: c.logo_url,
+            description: c.description,
+            difficulty: c.difficulty || "MEDIUM",
+            isActive: c.is_active,
+            sampleQuestionsCount: c.sample_questions_count || 30,
+            blueprint: c.test_blueprint_json || {
+              durationMinutes: 60,
+              totalQuestions: 30,
+              negativeMarking: false,
+              sections: [],
+              instructions: [],
+            },
+          }));
+          setCompanies(mapped);
+        }
+      } catch (err) {
+        console.warn("Failed to load mock hub companies from Supabase:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadCompanies();
+  }, []);
+
   return (
     <AppShell role="STUDENT" title="Mock Assessments">
       <div className="space-y-6">
@@ -21,12 +70,12 @@ export default function StudentMockHubPage() {
 
         {/* Blueprint cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {COMPANIES_DATA.map((company) => (
+          {companies.map((company) => (
             <div key={company.id} className="saas-card p-6 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold px-2.5 py-1 rounded bg-blue-50 text-blue-700">
-                    {company.badge}
+                    {company.badge || `${company.difficulty} Pattern`}
                   </span>
                   <div className="flex items-center gap-1 text-xs text-slate-500">
                     <Clock className="w-3.5 h-3.5" />
@@ -42,7 +91,7 @@ export default function StudentMockHubPage() {
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     Blueprint Sections:
                   </p>
-                  {company.blueprint.sections.map((s) => (
+                  {company.blueprint.sections?.map((s) => (
                     <div key={s.name} className="flex items-center justify-between text-xs text-slate-600">
                       <span>{s.name}</span>
                       <span className="font-semibold text-slate-800">{s.questionCount} Qs</span>

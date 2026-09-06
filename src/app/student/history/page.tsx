@@ -1,12 +1,62 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { History, ArrowRight, ShieldCheck, Target, Award } from "lucide-react";
+import { History, ArrowRight, ShieldCheck, Target, Award, Loader2, HelpCircle } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { DEMO_STUDENT_SESSIONS } from "@/lib/mockData";
+import { MockSession } from "@/types";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function StudentHistoryPage() {
+  const [sessions, setSessions] = useState<MockSession[]>(DEMO_STUDENT_SESSIONS);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadSessions() {
+      if (!isSupabaseConfigured) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("mock_sessions")
+          .select("*, companies(*)")
+          .order("created_at", { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const mapped: MockSession[] = data.map((s: any) => ({
+            id: s.id,
+            studentId: s.student_id,
+            companyId: s.company_id || "general",
+            companyName: s.companies?.name || "Corporate Pattern",
+            companySlug: s.companies?.slug || "general",
+            sessionType: s.session_type || "SELF_MOCK",
+            status: s.status,
+            startedAt: s.started_at,
+            completedAt: s.completed_at,
+            durationMinutes: 60,
+            totalScore: Number(s.total_score) || 0,
+            performanceScore: Number(s.performance_score) || 0,
+            readinessScore: Number(s.readiness_score) || 0,
+            integrityScore: Number(s.integrity_score) || 100,
+            questionsCount: s.cheat_summary_json?.totalQuestions || 25,
+            answeredCount: s.cheat_summary_json?.questionsAnswered || 0,
+            markedForReviewCount: 0,
+          }));
+          setSessions(mapped);
+        }
+      } catch (err) {
+        console.warn("Failed to load mock sessions from Supabase, using fallback:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadSessions();
+  }, []);
+
   return (
     <AppShell role="STUDENT" title="Assessment History">
       <div className="space-y-6 max-w-5xl mx-auto">
@@ -34,7 +84,7 @@ export default function StudentHistoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {DEMO_STUDENT_SESSIONS.map((ses) => (
+                {sessions.map((ses) => (
                   <tr key={ses.id} className="hover:bg-slate-50/80 transition">
                     <td className="py-3.5 px-4 font-bold text-slate-900">
                       {ses.companyName}
@@ -55,7 +105,7 @@ export default function StudentHistoryPage() {
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Normal
+                        {(ses.integrityScore ?? 100) >= 85 ? "Normal (Clean)" : "Flagged Telemetry"}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-right">

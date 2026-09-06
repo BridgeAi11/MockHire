@@ -21,11 +21,24 @@ import { AppShell } from "@/components/shared/AppShell";
 import { StatCard } from "@/components/ui/StatCard";
 import { getCurrentUser } from "@/lib/auth";
 import { UserProfile } from "@/types";
-import { CURATED_QUESTIONS_BANK, COMPANIES_DATA } from "@/lib/mockData";
+import { CURATED_QUESTIONS_BANK } from "@/lib/mockData";
 
 export default function AdminDashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [stats, setStats] = useState({
+    collegesCount: 14,
+    studentsCount: 3850,
+    companiesCount: 5,
+    questionsCount: CURATED_QUESTIONS_BANK.length,
+    publishedQuestionsCount: CURATED_QUESTIONS_BANK.length,
+    underReviewQuestionsCount: 0,
+    draftQuestionsCount: 0,
+    sessionsCount: 0,
+    aiJobsCount: 0,
+    telemetryFlagsCount: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const active = getCurrentUser();
@@ -36,6 +49,23 @@ export default function AdminDashboardPage() {
     } else {
       setUser(active);
     }
+
+    async function loadStats() {
+      try {
+        const res = await fetch("/api/admin/stats");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            setStats(json.data);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load admin stats:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadStats();
   }, [router]);
 
   return (
@@ -65,62 +95,62 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* 7 High-Level Admin Stat Cards (Section 38) */}
+        {/* 7 High-Level Admin Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <StatCard
             title="Total Colleges"
-            value="38"
+            value={stats.collegesCount.toString()}
             icon={School}
             iconColor="text-blue-600 bg-blue-50"
-            subtitle="14 Universities"
+            subtitle="Partner Institutions"
           />
           <StatCard
             title="Total Students"
-            value="18,420"
+            value={stats.studentsCount.toLocaleString()}
             icon={Users}
             iconColor="text-indigo-600 bg-indigo-50"
-            subtitle="Across all batches"
+            subtitle="Registered Candidates"
           />
           <StatCard
             title="Active Companies"
-            value="5"
+            value={stats.companiesCount.toString()}
             icon={Building2}
             iconColor="text-purple-600 bg-purple-50"
             subtitle="Enterprise Patterns"
           />
           <StatCard
             title="Total Questions"
-            value={CURATED_QUESTIONS_BANK.length + 385}
+            value={stats.questionsCount.toString()}
             icon={Layers}
             iconColor="text-emerald-600 bg-emerald-50"
             subtitle="Curated, Zero AI"
           />
           <StatCard
             title="Mock Sessions"
-            value="42,100"
+            value={stats.sessionsCount.toString()}
             icon={ClipboardList}
             iconColor="text-blue-600 bg-blue-50"
             subtitle="Completed mocks"
           />
           <StatCard
             title="AI Jobs Queue"
-            value="12"
+            value={stats.aiJobsCount.toString()}
             icon={Cpu}
             iconColor="text-amber-600 bg-amber-50"
             subtitle="Active async jobs"
           />
           <StatCard
             title="Flagged Telemetry"
-            value="24"
+            value={stats.telemetryFlagsCount.toString()}
             icon={ShieldAlert}
             iconColor="text-rose-600 bg-rose-50"
-            subtitle="Pending audit"
+            subtitle="Integrity alerts"
           />
         </div>
 
         {/* Two Columns: Question Bank Health & AI Async Queue Status */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Curated Question Bank Lifecycle Status (Section 39) */}
+          {/* Curated Question Bank Lifecycle Status */}
           <div className="lg:col-span-7 saas-card p-6 bg-white space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -142,15 +172,15 @@ export default function AdminDashboardPage() {
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
                 <p className="text-[10px] text-emerald-600 font-bold uppercase">Published</p>
-                <p className="text-xl font-extrabold text-emerald-700 mt-1">385</p>
+                <p className="text-xl font-extrabold text-emerald-700 mt-1">{stats.publishedQuestionsCount}</p>
               </div>
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
                 <p className="text-[10px] text-amber-600 font-bold uppercase">Under Review</p>
-                <p className="text-xl font-extrabold text-amber-700 mt-1">18</p>
+                <p className="text-xl font-extrabold text-amber-700 mt-1">{stats.underReviewQuestionsCount}</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <p className="text-[10px] text-slate-500 font-bold uppercase">Draft</p>
-                <p className="text-xl font-extrabold text-slate-700 mt-1">7</p>
+                <p className="text-xl font-extrabold text-slate-700 mt-1">{stats.draftQuestionsCount}</p>
               </div>
             </div>
 

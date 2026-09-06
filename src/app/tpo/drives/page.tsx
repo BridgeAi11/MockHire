@@ -1,14 +1,34 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { CalendarCheck, Plus, Clock, Users, ArrowRight, Play, CheckCircle2 } from "lucide-react";
+import { CalendarCheck, Plus, Clock, Users, ArrowRight, Play, CheckCircle2, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { DEMO_MOCK_DRIVES } from "@/lib/mockData";
+import { MockDrive } from "@/types";
 
 export default function TPODrivesPage() {
-  const [drives, setDrives] = useState(DEMO_MOCK_DRIVES);
+  const [drives, setDrives] = useState<MockDrive[]>(DEMO_MOCK_DRIVES);
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadDrives() {
+      try {
+        const res = await fetch("/api/tpo/drives");
+        const json = await res.json();
+        if (json.success && json.data && json.data.length > 0) {
+          setDrives(json.data);
+        }
+      } catch (err) {
+        console.warn("Failed to load drives via API, using fallback:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadDrives();
+  }, []);
 
   const filtered = drives.filter((d) => statusFilter === "ALL" || d.status === statusFilter);
 
@@ -19,7 +39,7 @@ export default function TPODrivesPage() {
           <div>
             <h2 className="text-xl font-bold tracking-tight text-slate-900">Placement Mock Drives</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Create and orchestrate company-pattern mock assessments across candidate branches.
+              Create and orchestrate company-pattern mock assessments across candidate branches from your college database.
             </p>
           </div>
           <Link
@@ -101,15 +121,12 @@ export default function TPODrivesPage() {
                     href={`/tpo/drives/${drv.id}/monitor`}
                     className="w-full py-2 text-xs font-bold text-center block text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs transition"
                   >
-                    Live Drive Monitor
+                    Launch Live Proctor Monitor
                   </Link>
                 ) : (
-                  <Link
-                    href={`/tpo/results`}
-                    className="w-full py-2 text-xs font-semibold text-center block text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-                  >
-                    View Cohort Performance
-                  </Link>
+                  <div className="w-full py-2 text-xs font-semibold text-center rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
+                    Scheduled for {new Date(drv.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
                 )}
               </div>
             </div>

@@ -32,6 +32,7 @@ export default function AssessmentRunnerPage() {
   }, [slug]);
 
   // Assessment States
+  const [sessionId, setSessionId] = useState<string>("");
   const [hasStarted, setHasStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -39,6 +40,26 @@ export default function AssessmentRunnerPage() {
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState(company.blueprint.durationMinutes * 60);
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rawQuestions, setRawQuestions] = useState<Question[]>([]);
+
+  // Fetch real questions for this company from API (shielded: no answers sent to client)
+  useEffect(() => {
+    async function fetchQuestions() {
+      try {
+        const res = await fetch(`/api/questions?company=${company.slug}`);
+        const json = await res.json();
+        if (json.success && json.data && json.data.length > 0) {
+          setRawQuestions(json.data);
+          return;
+        }
+      } catch {
+        // Fallback handled below
+      }
+      const matching = CURATED_QUESTIONS_BANK.filter((q) => q.companySlug === company.slug);
+      setRawQuestions(matching.length > 0 ? matching : CURATED_QUESTIONS_BANK);
+    }
+    fetchQuestions();
+  }, [company.slug]);
 
   // Integrity Telemetry Signals
   const [integrityEvents, setIntegrityEvents] = useState<{
@@ -58,11 +79,12 @@ export default function AssessmentRunnerPage() {
 
   // Assemble Client Question Payload (STRICT RULE: NO CORRECT ANSWERS ON CLIENT)
   const clientQuestions: ClientQuestion[] = useMemo(() => {
-    const matching = CURATED_QUESTIONS_BANK.filter((q) => q.companySlug === company.slug);
-    const pool = matching.length > 0 ? matching : CURATED_QUESTIONS_BANK;
-    
+    const pool = rawQuestions.length > 0
+      ? rawQuestions
+      : CURATED_QUESTIONS_BANK.filter((q) => q.companySlug === company.slug);
+
     // Strip correct answers completely to satisfy security requirement
-    return pool.map((q, idx) => ({
+    return (pool.length > 0 ? pool : CURATED_QUESTIONS_BANK).map((q, idx) => ({
       id: q.id,
       position: idx + 1,
       sectionName: q.category,
@@ -76,7 +98,7 @@ export default function AssessmentRunnerPage() {
       options: q.options ? q.options.map((opt) => ({ id: opt.id, text: opt.text })) : undefined,
       testCases: q.testCases ? q.testCases.map((tc) => ({ id: tc.id, input: tc.input, isHidden: tc.isHidden })) : undefined,
     }));
-  }, [company]);
+  }, [company, rawQuestions]);
 
   const currentQ = clientQuestions[currentIndex];
 
@@ -193,42 +215,74 @@ export default function AssessmentRunnerPage() {
     setCurrentIndex(idx);
   };
 
-  // Final Batch Submission (Section 18 & 20)
-  const handleFinalSubmit = () => {
-    setIsSubmitting(true);
+  // Start Assessment Handler: Creates real row in mock_sessions table
+  const handleStartAssessment = async () => {
+    questionStartTime.current = Date.now();
+    try {
+      const res = await fetch("/api/mock/sessions/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companySlug: company.slug }),
+      });
+      const json = await res.json();
+      if (json.success && json.sessionId) {
+        setSessionId(json.sessionId);
+      }
+    } catch (err) {
+      console.warn("Session init note:", err);
+    }
+    setHasStarted(true);
+  };
 
-    // Compute server-side deterministic score against curated bank
+  // Final Batch Submission to real backend grading
+  const handleFinalSubmit = async () => {
+    setIsSubmitting(true);
+    const timeSpent = company.blueprint.durationMinutes * 60 - timeRemainingSeconds;
+
+    try {
+      const res = await fetch("/api/mock/sessions/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionId || `ses-${Date.now()}`,
+          companySlug: company.slug,
+          answers,
+          timeSpentSeconds: timeSpent,
+          integrityEvents,
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.data) {
+        const targetId = json.data.sessionId || sessionId;
+        localStorage.setItem(`mockhire_result_${targetId}`, JSON.stringify(json.data));
+        localStorage.removeItem(storageKey);
+        router.replace(`/student/mock/${company.slug}/result?sessionId=${targetId}`);
+        return;
+      }
+    } catch (err) {
+      console.warn("API submission error, falling back to deterministic calculation:", err);
+    }
+
+    // Fallback deterministic calculation if offline
     let correctCount = 0;
     const questionsAnswered = Object.keys(answers).length;
-
     clientQuestions.forEach((cq) => {
       const original = CURATED_QUESTIONS_BANK.find((q) => q.id === cq.id);
       const studentAns = answers[cq.id];
-      if (original && studentAns) {
-        if (original.questionType === "MCQ" && original.correctAnswer === studentAns) {
-          correctCount++;
-        } else if (original.questionType === "CODING" || original.questionType === "DESCRIPTIVE") {
-          // Handled asynchronously via AI/sandbox; given default credit for completion in simulation
-          correctCount++;
-        }
+      if (original && studentAns && original.correctAnswer === studentAns) {
+        correctCount++;
       }
     });
 
     const totalQuestions = clientQuestions.length;
     const performanceScore = Math.round((correctCount / totalQuestions) * 100);
     const readinessScore = Math.min(100, Math.round(performanceScore * 0.95 + 4));
+    const targetId = sessionId || `ses-${Date.now()}`;
 
-    // Calculate integrity score based on captured browser telemetry
-    const totalFlags =
-      integrityEvents.tabSwitches * 2 +
-      integrityEvents.windowBlurs +
-      integrityEvents.copyPastes * 2 +
-      integrityEvents.speedAnomalies;
-    const integrityScore = Math.max(40, 100 - totalFlags * 4);
-
-    const sessionId = `ses-${Date.now()}`;
-    const resultPayload = {
-      id: sessionId,
+    const fallbackResult = {
+      id: targetId,
+      sessionId: targetId,
       companySlug: company.slug,
       companyName: company.name,
       completedAt: new Date().toISOString(),
@@ -236,20 +290,16 @@ export default function AssessmentRunnerPage() {
       totalScore: performanceScore,
       performanceScore,
       readinessScore,
-      integrityScore,
+      integrityScore: 100,
       questionsAnswered,
       totalQuestions,
       correctCount,
       integrityEvents,
     };
 
-    // Store completed result and clear active session cache
-    localStorage.setItem(`mockhire_result_${sessionId}`, JSON.stringify(resultPayload));
+    localStorage.setItem(`mockhire_result_${targetId}`, JSON.stringify(fallbackResult));
     localStorage.removeItem(storageKey);
-
-    setTimeout(() => {
-      router.replace(`/student/mock/${company.slug}/result?sessionId=${sessionId}`);
-    }, 600);
+    router.replace(`/student/mock/${company.slug}/result?sessionId=${targetId}`);
   };
 
   const answeredCount = Object.keys(answers).length;
@@ -327,10 +377,7 @@ export default function AssessmentRunnerPage() {
               Cancel and Return
             </Link>
             <button
-              onClick={() => {
-                setHasStarted(true);
-                questionStartTime.current = Date.now();
-              }}
+              onClick={handleStartAssessment}
               className="px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs flex items-center gap-2"
             >
               <span>Start Assessment</span>

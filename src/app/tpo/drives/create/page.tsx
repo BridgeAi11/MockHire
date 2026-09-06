@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarCheck, CheckCircle2, Shield } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CheckCircle2, Shield, AlertCircle, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { COMPANIES_DATA } from "@/lib/mockData";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function CreateMockDrivePage() {
   const router = useRouter();
@@ -18,14 +19,73 @@ export default function CreateMockDrivePage() {
   const [instructions, setInstructions] = useState(
     "Mandatory pre-placement evaluation. Telemetry signals active. Complete within allocated time window."
   );
+  const [companies, setCompanies] = useState<any[]>(COMPANIES_DATA);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function loadCompanies() {
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase
+            .from("companies")
+            .select("id, name, slug, badge, blueprint")
+            .eq("is_active", true)
+            .order("tier", { ascending: true });
+
+          if (!error && data && data.length > 0) {
+            setCompanies(data);
+            if (data[0]?.slug) {
+              setCompanySlug(data[0].slug);
+              if (data[0].blueprint?.durationMinutes) {
+                setDuration(data[0].blueprint.durationMinutes);
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load companies, using fallback:", e);
+        }
+      }
+    }
+    loadCompanies();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaved(true);
-    setTimeout(() => {
-      router.push("/tpo/drives");
-    }, 1000);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    const scheduledAt = date ? new Date(`${date}T${time}:00`).toISOString() : new Date().toISOString();
+
+    try {
+      const res = await fetch("/api/tpo/drives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          driveName,
+          companySlug,
+          scheduledAt,
+          durationMinutes: duration,
+          instructions,
+          department,
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || "Failed to schedule mock drive");
+      }
+
+      setIsSaved(true);
+      setTimeout(() => {
+        router.push("/tpo/drives");
+      }, 1200);
+    } catch (err: any) {
+      console.error("Error creating drive:", err);
+      setErrorMessage(err.message || "An unexpected error occurred while scheduling the drive.");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -47,6 +107,13 @@ export default function CreateMockDrivePage() {
             </p>
           </div>
         </div>
+
+        {errorMessage && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="saas-card p-6 bg-white space-y-4">
           <div>
@@ -72,14 +139,16 @@ export default function CreateMockDrivePage() {
                 value={companySlug}
                 onChange={(e) => {
                   setCompanySlug(e.target.value);
-                  const selected = COMPANIES_DATA.find((c) => c.slug === e.target.value);
-                  if (selected) setDuration(selected.blueprint.durationMinutes);
+                  const selected = companies.find((c) => c.slug === e.target.value);
+                  if (selected?.blueprint?.durationMinutes) {
+                    setDuration(selected.blueprint.durationMinutes);
+                  }
                 }}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                {COMPANIES_DATA.map((c) => (
-                  <option key={c.id} value={c.slug}>
-                    {c.name} ({c.badge})
+                {companies.map((c) => (
+                  <option key={c.id || c.slug} value={c.slug}>
+                    {c.name} {c.badge ? `(${c.badge})` : ""}
                   </option>
                 ))}
               </select>
@@ -165,10 +234,15 @@ export default function CreateMockDrivePage() {
             </Link>
             <button
               type="submit"
-              disabled={isSaved}
+              disabled={isSaved || isSubmitting}
               className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
             >
-              {isSaved ? (
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Scheduling Drive...</span>
+                </>
+              ) : isSaved ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>Drive Scheduled!</span>

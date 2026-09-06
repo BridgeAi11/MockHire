@@ -24,10 +24,47 @@ import {
   CalendarCheck,
 } from "lucide-react";
 import { COMPANIES_DATA } from "@/lib/mockData";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [companies, setCompanies] = useState<any[]>(COMPANIES_DATA);
+
+  React.useEffect(() => {
+    async function loadCompanies() {
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase
+            .from("companies")
+            .select("*")
+            .eq("is_active", true)
+            .order("tier", { ascending: true })
+            .limit(6);
+
+          if (!error && data && data.length > 0) {
+            const mapped = data.map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              slug: c.slug,
+              badge: c.slug.toUpperCase(),
+              description: c.description,
+              difficulty: c.difficulty,
+              blueprint: c.test_blueprint_json || {
+                durationMinutes: 45,
+                sections: [],
+                negativeMarking: false,
+              },
+            }));
+            setCompanies(mapped);
+          }
+        } catch (e) {
+          console.warn("Landing page companies query fallback:", e);
+        }
+      }
+    }
+    loadCompanies();
+  }, []);
 
   const faqs = [
     {
@@ -510,7 +547,7 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {COMPANIES_DATA.slice(0, 3).map((comp) => (
+            {companies.slice(0, 3).map((comp) => (
               <div key={comp.id} className="saas-card p-6 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between">
@@ -525,7 +562,7 @@ export default function LandingPage() {
                   <p className="mt-2 text-xs text-slate-600 leading-relaxed">{comp.description}</p>
                   
                   <div className="mt-4 pt-4 border-t border-slate-100 space-y-1.5">
-                    {comp.blueprint.sections.map((sec) => (
+                    {(comp.blueprint?.sections || []).map((sec: any) => (
                       <div key={sec.name} className="flex items-center justify-between text-xs text-slate-500">
                         <span>{sec.name}</span>
                         <span className="font-semibold text-slate-700">{sec.questionCount} Qs</span>

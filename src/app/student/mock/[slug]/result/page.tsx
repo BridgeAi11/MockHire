@@ -48,32 +48,59 @@ function AssessmentResultContent() {
   } | null>(null);
 
   useEffect(() => {
-    if (sessionId) {
-      const raw = localStorage.getItem(`mockhire_result_${sessionId}`);
-      if (raw) {
+    let mounted = true;
+
+    async function loadResult() {
+      // 1. Try fetching real evaluated session from Supabase API
+      if (sessionId) {
         try {
-          setResult(JSON.parse(raw));
-          return;
-        } catch {
-          // ignore
+          const res = await fetch(`/api/mock/sessions/${sessionId}`);
+          const json = await res.json();
+          if (json.success && json.data && mounted) {
+            setResult(json.data);
+            return;
+          }
+        } catch (err) {
+          console.warn("Could not fetch session from API:", err);
         }
+
+        // 2. Check local storage cache
+        const raw = localStorage.getItem(`mockhire_result_${sessionId}`);
+        if (raw) {
+          try {
+            if (mounted) {
+              setResult(JSON.parse(raw));
+              return;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      // 3. Fallback simulation if direct link or offline
+      if (mounted) {
+        setResult({
+          id: sessionId || "sim-001",
+          companyName: slug.toUpperCase(),
+          completedAt: new Date().toISOString(),
+          totalScore: 82.5,
+          performanceScore: 84.0,
+          readinessScore: 81.0,
+          integrityScore: 96.0,
+          questionsAnswered: 24,
+          totalQuestions: 25,
+          correctCount: 21,
+          integrityEvents: { tabSwitches: 1, windowBlurs: 1, copyPastes: 0, speedAnomalies: 0 },
+        });
       }
     }
 
-    // Default fallback simulation if direct link
-    setResult({
-      id: sessionId || "sim-001",
-      companyName: slug.toUpperCase(),
-      completedAt: new Date().toISOString(),
-      totalScore: 82.5,
-      performanceScore: 84.0,
-      readinessScore: 81.0,
-      integrityScore: 96.0,
-      questionsAnswered: 24,
-      totalQuestions: 25,
-      correctCount: 21,
-      integrityEvents: { tabSwitches: 1, windowBlurs: 1, copyPastes: 0, speedAnomalies: 0 },
-    });
+    loadResult();
+
+    return () => {
+      mounted = false;
+    };
   }, [sessionId, slug]);
 
   if (!result) return null;

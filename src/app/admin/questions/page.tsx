@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Layers,
@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Eye,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/shared/AppShell";
 import { CURATED_QUESTIONS_BANK } from "@/lib/mockData";
@@ -19,9 +20,30 @@ import { Question } from "@/types";
 
 export default function AdminQuestionsPage() {
   const [questions, setQuestions] = useState<Question[]>(CURATED_QUESTIONS_BANK);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
+
+  useEffect(() => {
+    async function loadQuestions() {
+      try {
+        const res = await fetch("/api/admin/questions");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            setQuestions(json.data);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load admin questions:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadQuestions();
+  }, []);
 
   const filtered = questions.filter((q) => {
     const matchSearch =
@@ -33,10 +55,35 @@ export default function AdminQuestionsPage() {
     return matchSearch && matchStatus && matchCategory;
   });
 
-  const handleUpdateStatus = (id: string, newStatus: Question["status"]) => {
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, status: newStatus } : q))
-    );
+  const handleUpdateStatus = async (id: string, newStatus: Question["status"]) => {
+    try {
+      const res = await fetch("/api/admin/questions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: newStatus }),
+      });
+      if (res.ok) {
+        setQuestions((prev) =>
+          prev.map((q) => (q.id === id ? { ...q, status: newStatus } : q))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to update status:", err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this question?")) return;
+    try {
+      const res = await fetch(`/api/admin/questions?id=${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setQuestions((prev) => prev.filter((q) => q.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete question:", err);
+    }
   };
 
   return (
@@ -166,7 +213,7 @@ export default function AdminQuestionsPage() {
                         {q.status}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-right space-x-1">
+                    <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
                       {q.status !== "PUBLISHED" ? (
                         <button
                           onClick={() => handleUpdateStatus(q.id, "PUBLISHED")}
@@ -177,11 +224,18 @@ export default function AdminQuestionsPage() {
                       ) : (
                         <button
                           onClick={() => handleUpdateStatus(q.id, "RETIRED")}
-                          className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded"
+                          className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded border border-slate-200"
                         >
                           Retire
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(q.id)}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition inline-block align-middle"
+                        title="Delete Question"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
