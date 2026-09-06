@@ -145,18 +145,6 @@ DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.<YOUR-SUPABASE-PROJECT-ID>
 # Application Settings
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_ENABLE_WEBCAM=true
-
-# Optional AI & Third-Party APIs
-NVIDIA_NIM_API_KEY=your-nvidia-nim-key
-NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
-
-# Optional Judge0 Code Execution
-JUDGE0_URL=https://judge0-ce.p.rapidapi.com
-JUDGE0_API_KEY=your-judge0-api-key
-
-# Optional Razorpay Payment Gateway
-RAZORPAY_KEY_ID=rzp_test_placeholder
-RAZORPAY_KEY_SECRET=your-razorpay-secret
 ```
 
 ---

@@ -136,21 +136,24 @@ export async function signInWithSupabaseEmailPassword(
 }
 
 // ------------------------------------------------------------
-// REAL SUPABASE AUTH: SIGN UP
+// REAL SUPABASE AUTH: SIGN UP (ALWAYS DEFAULTS TO STUDENT ROLE)
 // ------------------------------------------------------------
 export async function signUpWithSupabase(
   email: string,
   password: string,
-  fullName: string,
-  role: UserRole = "STUDENT"
+  fullName: string
 ): Promise<UserProfile> {
+  // SECURITY REQUIREMENT 2: Role is unconditionally STUDENT on new signup.
+  // Role elevation to TPO or ADMIN must be performed by an authenticated administrator.
+  const assignedRole: UserRole = "STUDENT";
+
   if (!isSupabaseConfigured) {
     // Fall back to demo registration if Supabase is offline
     const fallbackProfile: UserProfile = {
       id: `usr-${Date.now()}`,
       email,
       fullName: fullName || email.split("@")[0],
-      role,
+      role: assignedRole,
       department: "Engineering",
       createdAt: new Date().toISOString(),
     };
@@ -164,7 +167,6 @@ export async function signUpWithSupabase(
     options: {
       data: {
         full_name: fullName,
-        role,
       },
     },
   });
@@ -178,20 +180,20 @@ export async function signUpWithSupabase(
     throw new Error("Signup failed: Could not create user");
   }
 
-  // Insert profile in public.users table (or rely on trigger)
+  // Insert profile in public.users table as STUDENT
   await supabase.from("users").upsert({
     id: authUser.id,
     auth_user_id: authUser.id,
     email,
     full_name: fullName,
-    role,
+    role: assignedRole,
   });
 
   const profile: UserProfile = {
     id: authUser.id,
     email,
     fullName,
-    role,
+    role: assignedRole,
     department: "Engineering",
     createdAt: authUser.created_at,
   };

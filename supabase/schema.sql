@@ -251,12 +251,175 @@ CREATE POLICY "TPOs and Admins view cheat events" ON cheat_events
     FOR SELECT USING (
         auth.jwt() ->> 'role' = 'ADMIN' OR
         EXISTS (
-            SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'TPO'
+            SELECT 1 FROM users WHERE (users.id = auth.uid() OR users.auth_user_id = auth.uid()) AND users.role = 'TPO'
         )
     );
 
+-- 5. USERS TABLE POLICIES
+CREATE POLICY "Users can view own profile" ON users
+    FOR SELECT USING (
+        auth.uid() = id OR 
+        auth.uid() = auth_user_id OR
+        auth.jwt() ->> 'role' = 'ADMIN'
+    );
+
+CREATE POLICY "TPOs can view students in their college" ON users
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM users AS tpo 
+            WHERE (tpo.id = auth.uid() OR tpo.auth_user_id = auth.uid()) 
+            AND tpo.role = 'TPO' 
+            AND tpo.college_id = users.college_id
+        )
+    );
+
+CREATE POLICY "Users can update own profile" ON users
+    FOR UPDATE USING (
+        auth.uid() = id OR auth.uid() = auth_user_id
+    ) WITH CHECK (
+        -- Regular users cannot elevate their own role
+        role = (SELECT role FROM users WHERE id = auth.uid() OR auth_user_id = auth.uid())
+    );
+
+CREATE POLICY "Admins have full access to users" ON users
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 6. COLLEGES TABLE POLICIES
+CREATE POLICY "Colleges are viewable by authenticated users" ON colleges
+    FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "TPOs can update their assigned college" ON colleges
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM users 
+            WHERE (users.id = auth.uid() OR users.auth_user_id = auth.uid()) 
+            AND users.role = 'TPO' 
+            AND users.college_id = colleges.id
+        )
+    );
+
+CREATE POLICY "Admins have full access to colleges" ON colleges
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 7. MOCK DRIVES TABLE POLICIES
+CREATE POLICY "TPOs can manage drives in their college" ON mock_drives
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM users 
+            WHERE (users.id = auth.uid() OR users.auth_user_id = auth.uid()) 
+            AND users.role = 'TPO' 
+            AND users.college_id = mock_drives.college_id
+        )
+    );
+
+CREATE POLICY "Students can view assigned drives" ON mock_drives
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM mock_drive_students 
+            WHERE mock_drive_students.drive_id = mock_drives.id 
+            AND (mock_drive_students.student_id = auth.uid() OR EXISTS (
+                SELECT 1 FROM users WHERE users.id = mock_drive_students.student_id AND (users.id = auth.uid() OR users.auth_user_id = auth.uid())
+            ))
+        )
+    );
+
+CREATE POLICY "Admins have full access to mock drives" ON mock_drives
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 8. MOCK DRIVE STUDENTS (ASSIGNMENTS)
+CREATE POLICY "Students can view their own drive invitations" ON mock_drive_students
+    FOR SELECT USING (
+        student_id = auth.uid() OR
+        EXISTS (
+            SELECT 1 FROM users 
+            WHERE users.id = mock_drive_students.student_id 
+            AND (users.id = auth.uid() OR users.auth_user_id = auth.uid())
+        )
+    );
+
+CREATE POLICY "TPOs can manage student assignments for their college drives" ON mock_drive_students
+    FOR ALL USING (
+        EXISTS (
+            SELECT 1 FROM mock_drives 
+            JOIN users ON users.college_id = mock_drives.college_id 
+            WHERE mock_drives.id = mock_drive_students.drive_id 
+            AND (users.id = auth.uid() OR users.auth_user_id = auth.uid()) 
+            AND users.role = 'TPO'
+        )
+    );
+
+CREATE POLICY "Admins have full access to drive assignments" ON mock_drive_students
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 9. SESSION QUESTIONS
+CREATE POLICY "Students can view questions for own session" ON session_questions
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM mock_sessions 
+            WHERE mock_sessions.id = session_questions.session_id 
+            AND (mock_sessions.student_id = auth.uid() OR EXISTS (
+                SELECT 1 FROM users WHERE users.id = mock_sessions.student_id AND (users.id = auth.uid() OR users.auth_user_id = auth.uid())
+            ))
+        )
+    );
+
+CREATE POLICY "Students can submit answers for own session" ON session_questions
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM mock_sessions 
+            WHERE mock_sessions.id = session_questions.session_id 
+            AND (mock_sessions.student_id = auth.uid() OR EXISTS (
+                SELECT 1 FROM users WHERE users.id = mock_sessions.student_id AND (users.id = auth.uid() OR users.auth_user_id = auth.uid())
+            ))
+        )
+    );
+
+CREATE POLICY "TPOs can view questions for their college sessions" ON session_questions
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM mock_sessions 
+            JOIN users ON users.college_id = mock_sessions.college_id 
+            WHERE mock_sessions.id = session_questions.session_id 
+            AND (users.id = auth.uid() OR users.auth_user_id = auth.uid()) 
+            AND users.role = 'TPO'
+        )
+    );
+
+CREATE POLICY "Admins have full access to session questions" ON session_questions
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 10. AI JOBS
+CREATE POLICY "Students can view AI jobs for own session" ON ai_jobs
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM mock_sessions 
+            WHERE mock_sessions.id = ai_jobs.session_id 
+            AND (mock_sessions.student_id = auth.uid() OR EXISTS (
+                SELECT 1 FROM users WHERE users.id = mock_sessions.student_id AND (users.id = auth.uid() OR users.auth_user_id = auth.uid())
+            ))
+        )
+    );
+
+CREATE POLICY "Admins have full access to AI jobs" ON ai_jobs
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
+-- 11. SUBSCRIPTIONS
+CREATE POLICY "TPOs can view subscription for their college" ON subscriptions
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM users 
+            WHERE (users.id = auth.uid() OR users.auth_user_id = auth.uid()) 
+            AND users.role = 'TPO' 
+            AND users.college_id = subscriptions.college_id
+        )
+    );
+
+CREATE POLICY "Admins have full access to subscriptions" ON subscriptions
+    FOR ALL USING (auth.jwt() ->> 'role' = 'ADMIN');
+
 -- ============================================================
 -- AUTOMATIC AUTH USER SYNC (GOOGLE AUTH & EMAIL SIGNUP)
+-- SECURITY: ALWAYS assigns role = 'STUDENT'. Never trusts client metadata!
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -274,7 +437,7 @@ BEGIN
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'STUDENT'),
+    'STUDENT', -- SECURITY: Strictly default to STUDENT. Role elevation requires authenticated admin action.
     NEW.raw_user_meta_data->>'avatar_url'
   )
   ON CONFLICT (email) DO UPDATE SET

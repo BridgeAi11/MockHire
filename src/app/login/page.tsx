@@ -56,7 +56,6 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [selectedRole, setSelectedRole] = useState<UserRole>("STUDENT");
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -121,7 +120,8 @@ function LoginForm() {
       if (activeTab === "login") {
         profile = await signInWithSupabaseEmailPassword(email, password);
       } else {
-        profile = await signUpWithSupabase(email, password, fullName, selectedRole);
+        // Enforce STUDENT role server-side on registration
+        profile = await signUpWithSupabase(email, password, fullName);
       }
       router.replace(getRedirectPathForRole(profile.role));
     } catch (err: unknown) {
@@ -276,19 +276,8 @@ function LoginForm() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Select Account Role
-                  </label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                  >
-                    <option value="STUDENT">Student Candidate</option>
-                    <option value="TPO">College Placement Officer (TPO)</option>
-                    <option value="ADMIN">Platform Administrator</option>
-                  </select>
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                  Candidates register with <strong>Student Access</strong>. College TPO and Administrator roles require authorization from an existing institutional admin.
                 </div>
               </>
             )}

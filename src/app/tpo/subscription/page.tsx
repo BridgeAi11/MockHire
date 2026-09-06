@@ -13,8 +13,8 @@ export default function TPOSubscriptionPage() {
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
-      setSuccessMessage(`Order created & verified via Razorpay sandbox for ${planName} Plan!`);
-    }, 1200);
+      setSuccessMessage(`Subscription order generated for ${planName} Plan! Institutional billing invoice activated.`);
+    }, 1000);
   };
 
   return (
