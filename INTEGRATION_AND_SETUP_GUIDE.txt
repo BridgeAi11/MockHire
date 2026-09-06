@@ -1,0 +1,167 @@
+================================================================================
+MOCKHIRE - REAL-TIME FULLSTACK INTEGRATION & RUN GUIDE (.TXT)
+================================================================================
+
+This document contains step-by-step instructions to connect MockHire with:
+1. Supabase (PostgreSQL Database & Realtime Channels)
+2. Google OAuth 2.0 Authentication
+3. PostgreSQL Database Migrations & Initial Seed Data
+4. Real-time Frontend & Backend Telemetry & Subscriptions
+5. Running Locally and Deploying to Production
+
+--------------------------------------------------------------------------------
+1. ARCHITECTURE OVERVIEW
+--------------------------------------------------------------------------------
+MockHire is built as a complete real-time production application:
+- Frontend: Next.js 14 (App Router), React 18, Tailwind CSS, Lucide Icons
+- Database: Supabase PostgreSQL with Row Level Security (RLS) policies
+- Authentication: Supabase Auth supporting Google OAuth & Email/Password
+- Real-Time Layer: Supabase Realtime Channels (PostgreSQL replication via WebSockets)
+- Backend APIs: Next.js Route Handlers (/api/companies, /api/questions, /api/mock/sessions/submit)
+- Fallback Resilience: Automatic fallback to local demo data if external services are offline
+
+--------------------------------------------------------------------------------
+2. STEP-BY-STEP: SUPABASE SETUP
+--------------------------------------------------------------------------------
+1. Go to https://supabase.com and create a free account.
+2. Click "New Project":
+   - Name: MockHire
+   - Database Password: Create a strong password (save this!)
+   - Region: Select your closest region (e.g., ap-south-1 Mumbai)
+   - Click "Create new project" and wait 1-2 minutes.
+
+3. Get your API Keys:
+   - Go to Project Settings (gear icon at the bottom left) -> "API".
+   - Project URL: Copy the URL (e.g. https://abcdefghijklm.supabase.co).
+     This is your NEXT_PUBLIC_SUPABASE_URL.
+   - Project API Keys -> "anon" "public": Copy the key string.
+     This is your NEXT_PUBLIC_SUPABASE_ANON_KEY.
+   - Project API Keys -> "service_role" "secret": Copy the key string.
+     This is your SUPABASE_SERVICE_ROLE_KEY.
+
+4. Get your Database Connection String:
+   - In Project Settings -> "Database".
+   - Under "Connection string", select "URI".
+   - Copy the URI string and replace [YOUR-PASSWORD] with the database password.
+     This is your DATABASE_URL.
+
+--------------------------------------------------------------------------------
+3. STEP-BY-STEP: DATABASE MIGRATION & REALTIME REPLICATION
+--------------------------------------------------------------------------------
+1. Run the Database Schema:
+   - In your Supabase Dashboard, click "SQL Editor" in the left sidebar.
+   - Click "+ New query".
+   - Open the file "supabase/schema.sql" in this project.
+   - Copy the entire SQL content and paste it into the Supabase SQL editor.
+   - Click "Run" (or press Ctrl+Enter).
+   - This creates all 11 tables, indexes, RLS policies, automatic Google Auth user
+     sync trigger, and enables the supabase_realtime publication.
+
+2. Populate Companies & Question Bank (Seed Data):
+   - In Supabase SQL Editor, click "+ New query".
+   - Open the file "supabase/seed.sql" in this project.
+   - Copy the entire SQL content and paste it into the editor.
+   - Click "Run".
+   - This populates real company blueprints (TCS, Infosys, Wipro, Accenture, Amazon)
+     and curated assessment questions.
+
+3. Verify Real-time Replication is active:
+   - In Supabase Dashboard, go to "Database" -> "Replication".
+   - Confirm that "mock_sessions", "cheat_events", and "mock_drives" are toggled ON.
+
+--------------------------------------------------------------------------------
+4. STEP-BY-STEP: GOOGLE AUTHENTICATION SETUP
+--------------------------------------------------------------------------------
+1. Configure Google Cloud Console:
+   - Go to https://console.cloud.google.com/
+   - Create a new project (e.g., "MockHire-App").
+   - Go to "APIs & Services" -> "OAuth consent screen".
+   - Select "External" and click "Create".
+   - Enter App Name ("MockHire"), User support email, and Developer contact email.
+   - Click "Save and Continue".
+   - In "Scopes", click "Add or Remove Scopes" and select:
+     * .../auth/userinfo.email
+     * .../auth/userinfo.profile
+     * openid
+   - Click "Save and Continue".
+   - Under "Test users", add your own Google email address for testing.
+   - Finish and save.
+
+2. Create OAuth 2.0 Client ID:
+   - In Google Cloud Console, navigate to "APIs & Services" -> "Credentials".
+   - Click "+ CREATE CREDENTIALS" -> "OAuth client ID".
+   - Application type: "Web application".
+   - Name: "MockHire Web".
+   - Authorized JavaScript origins:
+     http://localhost:3000
+     https://<YOUR-PROJECT-ID>.supabase.co
+     https://your-domain.vercel.app
+   - Authorized redirect URIs (CRITICAL):
+     https://<YOUR-PROJECT-ID>.supabase.co/auth/v1/callback
+     (Note: Replace <YOUR-PROJECT-ID> with your real Supabase project ID!)
+   - Click "Create".
+   - Copy the "Client ID" and "Client Secret".
+
+3. Connect Google Auth in Supabase:
+   - In Supabase Dashboard, go to "Authentication" -> "Providers".
+   - Click on "Google".
+   - Toggle "Enable Google provider" to ON.
+   - Paste the "Client ID" and "Client Secret" from Google Cloud Console.
+   - Click "Save".
+   - Under "Authentication" -> "URL Configuration":
+     * Site URL: http://localhost:3000
+     * Redirect URLs: Add "http://localhost:3000/auth/callback" and your production URL.
+
+--------------------------------------------------------------------------------
+5. STEP-BY-STEP: ENVIRONMENT FILE (.env.local)
+--------------------------------------------------------------------------------
+In the project root folder (c:\MockHire\), create a file named ".env.local"
+and add the following values:
+
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-actual-anon-key-from-supabase
+SUPABASE_SERVICE_ROLE_KEY=your-actual-service-role-key-from-supabase
+DATABASE_URL=postgresql://postgres:your-password@db.your-project.supabase.co:5432/postgres
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_ENABLE_WEBCAM=true
+
+--------------------------------------------------------------------------------
+6. HOW TO RUN IN REAL TIME
+--------------------------------------------------------------------------------
+Open a terminal in c:\MockHire\ and run:
+
+1. Install all dependencies:
+   npm install
+
+2. Start the local server:
+   npm run dev
+
+3. Open your browser:
+   http://localhost:3000
+
+4. Testing the Real-Time Integration:
+   - Login: Go to http://localhost:3000/login
+   - Click "Continue with Google" -> Signs in using Google OAuth and creates user
+     record in Supabase database!
+   - Real-time Assessment: Go to Student Dashboard -> take a company mock test -> submit.
+   - Proctoring & Telemetry: Live tab switches, window blurs, and paste events
+     are streamed in real-time to the TPO Integrity Monitor dashboard.
+   - TPO Portal: Switch to TPO view to see live students, cohort readiness, and drives.
+
+--------------------------------------------------------------------------------
+7. PRODUCTION DEPLOYMENT (VERCEL)
+--------------------------------------------------------------------------------
+1. Commit and push your code to GitHub:
+   Repository: https://github.com/BridgeAi11/MockHire.git
+2. In Vercel (https://vercel.com), click "Import Project" and select the repository.
+3. Configure your Environment Variables in Vercel settings matching .env.local:
+   - NEXT_PUBLIC_SUPABASE_URL
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+   - SUPABASE_SERVICE_ROLE_KEY
+   - DATABASE_URL
+   - NEXT_PUBLIC_APP_URL (set to your Vercel deployment URL)
+4. Click "Deploy".
+5. In Google Cloud Console and Supabase Dashboard, add your new Vercel domain
+   to the Authorized Origins and Redirect URLs.
+================================================================================
